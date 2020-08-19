@@ -1,0 +1,380 @@
+---
+title: "scRNAseq workshop code"
+output: html_document
+---
+
+Basic code to upload scRNA seq data from Mathys et al., 2019 and explore the data with Monocle3. This notebook will walk you through the following steps:
+1) download and format data for Monocle3
+2) preprocess, reduce dimensions, cluster, and plot cells. 
+3) find the top marker genes for each broad cell type and plot expression
+4) focus on a specific pre-defined subcluster as an example (Mic1) and calculate trajectory
+5) explore disease-pseudotime association and plot
+6) find genes that are associated with pseudotime (i.e. genes that change expression across the trajaectory) and plot expression vs pseudotime
+
+RESOURCES
+Mathys et al., 2019: https://pubmed.ncbi.nlm.nih.gov/31042697/
+Monocle3 documentation: https://cole-trapnell-lab.github.io/monocle3/
+Monocle3 functions: https://rdrr.io/github/cole-trapnell-lab/monocle3/
+Synapse ID with data, descriptions: syn18485175
+
+#################################
+UPLOAD THE DATA:
+
+COUNTS: 
+This is a sparse matrix of gene counts by cell (rows are genes, columns are cells). It has been QC'd to: remove cells with abnormally high or low gene counts, remove cells with abnormally high ratio of mitochondrial genes, include counts associated with protein-coding genes, exclude mitochondrially encoded genes and genes detected in fewer than 2 cells, and remove potentially spurious clusters and doublets, as described in Mathys et al. The complete matrix is 17,926 genes by 70,634 cells.
+
+BATCHES:
+Sample batch data
+
+LABELS: 
+Cell barcodes and celltype data (broad cell type and Subcluster) as determined by Mathys et al. 
+Note: the data has already been deconvoluted. This workshop does not cover this topic but it is important!
+
+GENE LIST:
+get short gene names list and attach them to the counts file as rownames
+
+NOTE: Some code chunks will take longer to run than others. Please be patient and wait for one code chunk to finish running before starting the next.
+
+```{r}
+synapser::synLogin()
+p <- synapser::synGet('syn18686381')
+counts <- readMM(p$path)
+syn18642934 <- synapser::synGet(entity='syn18642934') 
+batches <- read.csv(syn18642934$path,stringsAsFactors = F)
+p2 <- synapser::synGet('syn18686372')
+Labels <- read.delim(p2$path,stringsAsFactors = F)
+p3 <- synapser::synGet('syn18686382')
+rownames(counts) <- readLines(p3$path)
+```
+
+METADATA: upload metadata files (two files, plus a key to match sample ids to rosmap ids); also impute PMI and APOE genotype for patients with missing data (PMI imputation = median PMI of the remaining Mathys subjects; APOE imputation = impute to 3/3)
+
+IDS:
+Needed to map rosmap IDs to sample IDs 
+
+METADATA:  NEED TO UPLOAD INTO SYNAPSE
+Neuropath data (this is a csv version of supplementary table 5 from Mathys et al.)
+
+METADATA2:
+Other metadata for rosmap subjects in Synapse
+
+```{r}
+p3 <- synapser::synGet('syn18694015')
+ids <- read.csv(p3$path,stringsAsFactors = F)
+metadata <- read.csv('~/scAD_analysis/ROSMAP_metadata2.csv')
+p4 <- synapser::synGet(entity='syn3191087') 
+metadata2 <- read.csv(p4$path)
+metadata2 <- plyr::match_df(metadata2, ids, on="projid")
+paste('Imputing PMI to:',median(metadata2$pmi[!is.na(metadata2$pmi)]))
+```
+
+Add imputed PMI and APOE genotype into the metadata file for those patients with missing data
+
+```{r}
+metadata2$pmi[is.na(metadata2$pmi)] <- 7
+metadata2$apoe_genotype[is.na(metadata2$apoe_genotype)] = 33
+head(metadata2)
+```
+
+Create columns to add to the cell metadata dataframe, and map rosmap ids (ros_ids) to sample ids (fastq) and project ids (projid). We will ultimately add the metadata and batch information to the Labels file so that each cell is appended with appropriate metadata.
+
+```{r}
+sex = c()
+m = as.character(metadata$msex)
+fileName = c()
+batch = c()
+ros_ids = c()
+projid = c()
+Diagnosis = c()
+cogdx = c()
+ceradsc = c()
+braaksc = c()
+tangles = c()
+apoe_genotype = c()
+pmi = c()
+educ=c()
+race=c()
+AOD=c()
+for(i in 1:length(rownames(Labels))){
+  ros_ids = c(ros_ids,ids$Subject[c(which(ids$projid==Labels$projid[i])[1])])
+  fileName = c(fileName,ids$fastq[c(which(ids$projid==Labels$projid[i])[1])])
+}
+Labels$ros_ids = ros_ids
+Labels$fileName = fileName
+head(Labels)
+```
+
+Map metadata to the cells
+
+```{r}
+for(i in 1:length(rownames(Labels))){
+  batch = c(batch,batches$sequencingBatch[c(which(batches$fileName==Labels$fileName[i])[1])])
+  Diagnosis = c(Diagnosis,metadata$pathology.group[c(which(metadata$Subject==Labels$ros_id[i])[1])])
+  cogdx = c(cogdx,metadata$cogdx[c(which(metadata$Subject==Labels$ros_id[i])[1])])
+  sex = c(sex,m[c(which(metadata$Subject==Labels$ros_id[i])[1])])
+  ceradsc = c(ceradsc,metadata$ceradsc[c(which(metadata$Subject==Labels$ros_id[i])[1])])
+  braaksc = c(braaksc,metadata$braaksc[c(which(metadata$Subject==Labels$ros_id[i])[1])])
+  tangles = c(tangles,metadata$tangles[c(which(metadata$Subject==Labels$ros_id[i])[1])])
+  apoe_genotype = c(apoe_genotype,metadata2$apoe_genotype[c(which(metadata2$projid==Labels$projid[i])[1])])
+  pmi = c(pmi,metadata2$pmi[c(which(metadata2$projid==Labels$projid[i])[1])])
+  educ = c(educ,metadata2$educ[c(which(metadata2$projid==Labels$projid[i])[1])])
+  race = c(race,metadata2$race[c(which(metadata2$projid==Labels$projid[i])[1])])
+  AOD = c(AOD,metadata2$age_first_ad_dx[c(which(metadata2$projid==Labels$projid[i])[1])])
+}
+Labels$batch = batch
+Labels$Diagnosis = Diagnosis
+Labels$cogdx = cogdx
+Labels$sex = sex
+Labels$ceradsc = ceradsc
+Labels$braaksc = braaksc
+Labels$tangles = tangles
+Labels$apoe_genotype = apoe_genotype
+Labels$pmi = pmi
+Labels$educ=educ
+Labels$race=race
+Labels$AOD=AOD
+Labels$Diagnosis[Labels$Diagnosis=='late-pathology'] <- "Late-path"
+Labels$Diagnosis[Labels$Diagnosis=='no-pathology'] <- 'Control'
+Labels$Diagnosis[Labels$Diagnosis=='early-pathology'] <- 'Early-path'
+Labels$simpleDiagnosis = Labels$Diagnosis
+Labels$simpleDiagnosis[Labels$simpleDiagnosis!='Control'] <- "AD"
+Labels$Diagnosis[Labels$Diagnosis==1]='Early-path'
+Labels$Diagnosis[Labels$Diagnosis==2]='Late-path'
+Labels$Diagnosis[Labels$Diagnosis==3]='Control'
+head(Labels)
+```
+
+Make the cell_data_set (CDS) object with monocle3:
+cds <- new_cell_data_set(expression_matrix,
+                        cell_metadata = cell_metadata,
+                       gene_metadata = gene_annotation)
+                       
+The expression_matrix MUST:
+1) have the same number of columns as the cell_metadata has rows.
+2) have the same number of rows as the gene_metadata has rows.
+Also:
+3) row names of the cell_metadata object should match the column names of the expression matrix (the order matters).
+4) row names of the gene_metadata object should match row names of the expression matrix (order matters here too).
+5) one of the columns of the gene_metadata should be named "gene_short_name", which represents the gene symbol or simple name (generally used for plotting) for each gene.
+
+```{r}
+colnames(counts) <- Labels[,1]
+rownames(Labels) <- Labels[,1]
+gene_short_name <- data.frame(rownames(counts))
+rownames(gene_short_name) <- rownames(counts)
+gene_short_name$gene_short_name <- rownames(counts)
+head(gene_short_name)
+```
+
+If synapser is attached, detach synapser and unload PythonEmbedInR because it causes multiple definitions of S4Vectors. The code may still throw PythonEmbedInR/S4Vector errors which can be ignored for now. The dimensions of the cds should be 17926 x 70634.
+
+```{r}
+#detach("package:synapser", unload=TRUE)
+#unloadNamespace("PythonEmbedInR")
+cds <- monocle3::new_cell_data_set(counts,
+                         cell_metadata = Labels,
+                         gene_metadata = gene_short_name)
+dim(cds)
+```
+
+Run this code chunk to save or retrieve saved components of the cds into your directory in order to easily recreate the monocle object if needed
+
+```{r}
+saveRDS(counts, file="~/scAD_analysis/mathys_counts_matrix.rds")
+saveRDS(Labels, file="~/scAD_analysis/mathys_Labels.rds")
+saveRDS(gene_short_name, file="~/scAD_analysis/mathys_gene_short_name.rds")
+#counts <- readRDS(file="~/scAD_analysis/mathys_counts_matrix.rds")
+#Labels <- readRDS(file="~/scAD_analysis/mathys_Labels.rds")
+#gene_short_name <- readRDS(file="~/scAD_analysis/mathys_gene_short_name.rds")
+```
+
+Clean up some variables before processing and plotting:
+
+```{r}
+cds$educ = as.numeric(cds$educ)
+cds$Education = cds$educ
+cds$Sex = cds$sex
+cds$CERAD = cds$ceradsc
+cds$Braak = cds$braaksc
+cds$APOE_genotype = cds$apoe_genotype
+cds$batch = as.factor(cds$batch)
+```
+
+Preprocessing the data using PCA: we will compute 30 PCs and check to see if this is enough to capture most of the variation in gene expression across all cells in the data set with a visual plot. We will normalize by size factor to address sequencing depth differences.
+
+```{r}
+cds = monocle3::preprocess_cds(cds, num_dim = 30,method="PCA",norm_method="size_only")
+monocle3::plot_pc_variance_explained(cds)
+```
+
+Next, adjust for batch effects (factor variable) using mutual nearest neighbor (via the "align_cds -> alignment_group" fxn below), and adjust for years of education and pmi (continuous variables) using regression (via the "align_cds -> residual_model_formula_str" fxn). Then reduce dimensionality of the data using UMAP, cluster the cells, and plot by broad cell type (as defined in Mathys et al.)
+
+```{r}
+cds <- monocle3::align_cds(cds, 
+                        preprocess_method="PCA",
+                        alignment_group="batch",
+                        residual_model_formula_str="~educ+pmi")
+cds = monocle3::reduce_dimension(cds)
+cds = monocle3::cluster_cells(cds, reduction_method="UMAP")
+monocle3::plot_cells(cds, color_cells_by="broad.cell.type",cell_size=.1,label_cell_groups=0,show_trajectory_graph=FALSE)+theme(
+  legend.title = element_text(size = 10),
+  legend.text = element_text(size = 7),legend.key.size = unit(.5, "cm"),
+  legend.key.width = unit(0.5,"cm"))
+```
+
+Find the top marker genes for each broad cell type:
+Note: this is an overly broad analysis for demonstration purposes. You may be more interested in Subclusters within each broad cell type compared to each other, as done in Mathys et al.
+
+```{r}
+marker_test_res <- monocle3::top_markers(cds, group_cells_by="broad.cell.type", cores=8)
+head(marker_test_res)
+```
+
+Pull the top marker gene for each cell type, then plot the expression and fraction of cells that express each top marker in each broad cell type
+
+```{r}
+top_markers <- marker_test_res %>%
+                filter(fraction_expressing >= 0.10) %>%
+                group_by(cell_group) %>%
+                top_n(1, pseudo_R2)
+top_marker_ids <- unique(top_markers %>% pull(gene_id))
+monocle3::plot_genes_by_group(cds, top_marker_ids,
+                    group_cells_by="broad.cell.type",
+                    ordering_type="maximal_on_diag",
+                    max.size=8)
+```
+
+Now plot expression across all the cell types for each top marker gene:
+
+```{r}
+monocle3::plot_cells(cds, genes=top_marker_ids)
+```
+
+#################################### TRAJECTORIES ######################
+
+Explore a specific cell subcluster: the Mic1 subcluster.
+Previous studies and preliminary analyses indicate important differences in gene expression in different cell types by sex. We will examine trajectories in female samples only.
+
+After subsetting the cds to include female mic1 cells only:
+1) repeat preprocess_cds to normalize by sequencing depth in the new smaller data set. 
+2) only keep genes non-zero in at least 20 cells
+3) change batch into a character and back to factor (to delete batch bins with 0 counts, it is a weird glitch)
+4) adjust for batch/pmi/education, reduce dimensions & cluster, this time using the louvain method of clustering (default is leiden, which generally produces less complex trajectories). 
+5) Call the learn_graph function to plot a trajectory, then plot by diagnosis (control, early-pathology AD, or late-pathology AD).
+
+```{r}
+cdsF <- cds[,cds$sex=='female']
+cds_subset <- cdsF[,cdsF$Subcluster=='Mic1'] 
+cds_subset <- clear_cds_slots(cds_subset)
+cds_subset = cds_subset[rowSums(exprs(cds_subset) != 0) >= 20,]
+cds_subset <- preprocess_cds(cds_subset, num_dim = 30, method = "PCA", norm_method="size_only")
+cds_subset$batch <- as.character(cds_subset$batch)
+cds_subset$batch <- as.factor(cds_subset$batch)
+cds_subset <- align_cds(cds_subset, 
+                        preprocess_method="PCA",
+                        alignment_group="batch",
+                        residual_model_formula_str="~educ+pmi")
+cds_subset = reduce_dimension(cds_subset, reduction_method="UMAP")
+cds_subset = cluster_cells(cds_subset, cluster_method="louvain")
+cds_subset <- learn_graph(cds_subset)
+plot_cells(cds_subset, color_cells_by="Diagnosis",cell_size=2,label_cell_groups=0)+theme(
+  legend.title = element_text(size = 10),
+  legend.text = element_text(size = 7),legend.key.size = unit(.5, "cm"),
+  legend.key.width = unit(0.5,"cm"))
+```
+
+Call order_cells function to set a root node for the trajectory. This function will cause a shiny app to pop up on the screen. After first examining the previous plot you created which is color-coded by diagnosis, in the shiny pop-up choose a cell at the end of a branch that is surrounded primarily by control/early-path cells and click on that single cell so that it turns red, then click "Done" (this is highly subjective but will boost our signal for demonstration purposes). Be sure to only click one cell; you may need to zoom in on the pop-up graph to avoid accidentally clicking more than one cell. Then add pseudotime estimates to colData and plot pseudotime across the trajectory.
+
+```{r}
+cds_subset<-order_cells(cds_subset)
+cds_subset$pseudotime = pseudotime(cds_subset)
+plot_cells(cds_subset, color_cells_by="pseudotime",cell_size=2)
+```
+
+Create a dataframe that will contain variables necessary to regress: diagnosis ~ pseudotime + educ + pmi
+Note: we are not adjusting for batch because the align_cds function already effectively subtracted out batch effects and we do not want to overcorrect. the align_cds residual_model_formula_str function only miniimally affects the clustering of the cells, so these variables should be included.
+
+```{r}
+pval_data <- data.frame(
+  pmi = colData(cds_subset)$pmi,
+  educ = colData(cds_subset)$educ,
+  Diagnosis = cds_subset$Diagnosis,
+  ros_ids = cds_subset$ros_ids)
+pval_data$diagnosis2 <- ifelse(pval_data$Diagnosis=='Control',0,1)
+pval_data$pseudotime = cds_subset$pseudotime
+fit <- lm(diagnosis2~pseudotime+pmi+educ, data=pval_data)
+summary(fit)
+```
+
+Use limma to pull the pseudotime coefficient and p-value, and assemble two plots: violin plot of pseudotime by diagnosis category alongside the trajectory plot.
+
+```{r}
+dm <- model.matrix(~pseudotime+pmi+educ, data=pval_data)
+fit1 <- lmFit(pval_data$diagnosis2,dm)
+fit2 <- eBayes(fit1)
+pval=topTable(fit2,coef=2)$adj.P.Val   
+logfc = topTable(fit2,coef=2)$logFC
+
+stars=''
+
+pval_data$Diagnosis = as.factor(cds_subset$Diagnosis)
+dp <- ggplot(pval_data, aes(x=Diagnosis, y=pseudotime, fill=Diagnosis)) + 
+  geom_violin(trim=FALSE)+geom_boxplot(width=0.1, fill="white")
+p1<-dp+theme(legend.position = "none")+theme(plot.margin = unit(c(0, 0, 0, 0), "cm"))+
+  theme(axis.title=element_text(size=14))+
+  ggtitle(paste0('p=',formatC(pval, format = "e", digits = 2)))+
+  theme(text = element_text(size = 15))
+p2<-plot_cells(cds_subset, color_cells_by="Diagnosis",cell_size=2,label_cell_groups=FALSE, label_leaves=FALSE,label_branch_points=FALSE,graph_label_size=1.5)+
+  theme(legend.position = "none")+
+  theme(plot.margin = unit(c(0, 0, 0, 0), "cm"))+
+  theme(axis.title.x=element_blank(),axis.title.y=element_blank())+
+  ggtitle(paste0('logFC=',formatC(logfc, format = "f", digits = 3),''))+
+  theme(text = element_text(size = 15))
+#pdf(paste0("~/scAD_analysis/figures2/Mic1_F_dx_pseudotime.pdf"))
+p3<-grid.arrange(arrangeGrob(p1,p2,ncol=2,top = textGrob(paste0('Mic1 Female',stars),gp=gpar(fontsize=18,font=2))))
+#dev.off()
+```
+
+We want to see which genes change expression across pseudotime by performing regression using the Monocle3 function fit_models, which fits the following regression for each gene: expr~pseudotime+pmi+educ
+We will output a csv file with the pseudotime coefficients and p-values for all genes with qvalue<0.05.
+
+```{r}
+gene_fits = fit_models(cds_subset, model_formula_str = "~pseudotime+pmi+educ")
+fit_coefs = coefficient_table(gene_fits)
+fit_coefs  <- subset(fit_coefs, term != "(Intercept)")
+fit_coefs2 <- subset(fit_coefs, term == "pseudotime")
+fit_coefs2 <- subset(fit_coefs2, status == 'OK')
+fit_coefs2 <- fit_coefs2[order(fit_coefs2$q_value),]
+fit_coefs2 <- subset(fit_coefs2, q_value < .05)
+fit_coefs2
+#fit_coefs[which(fit_coefs$gene_short_name=='CST3'),]
+keeps = c("gene_short_name","test_val","p_value","normalized_effect","q_value")
+fit_coefs2 = fit_coefs2[keeps]
+#write.csv(fit_coefs2[order(-fit_coefs2$normalized_effect),],file='~/scAD_analysis/figures2/Ast1_M_degs.csv')
+head(fit_coefs2)
+```
+
+Pull the top 9 genes by smallest qvalue, and plot expression in the Mic1 cells,
+Plot pseudotime across the x axis and expression on the y axis for each of the top 9 genes using the Monocle3 function plot_genes_in_pseudotim.
+
+```{r}
+top_mic1_genes <- fit_coefs2 %>%
+                top_n(-6, q_value)
+mic1_topgene_list <- unique(top_mic1_genes %>% pull(gene_short_name))
+plot_cells(cds_subset, genes=mic1_topgene_list,cell_size=1,label_cell_groups=0,show_trajectory_graph=FALSE)
+```
+
+Plot pseudotime across the x axis and expression on the y axis for each of the top 9 genes using the Monocle3 function plot_genes_in_pseudotime
+
+```{r}
+mic1_plotgenes <- cds_subset[rowData(cds_subset)$gene_short_name %in% mic1_topgene_list,]
+plot_genes_in_pseudotime(mic1_plotgenes, color_cells_by="Diagnosis",min_expr=0.5)
+```
+
+```{r}
+
+
+```
+
+
+
