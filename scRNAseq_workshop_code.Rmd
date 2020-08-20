@@ -61,7 +61,7 @@ Other metadata for rosmap subjects in Synapse
 ```{r}
 p3 <- synapser::synGet('syn18694015')
 ids <- read.csv(p3$path,stringsAsFactors = F)
-metadata <- read.csv('~/scAD_analysis/ROSMAP_metadata2.csv')
+metadata <- read.csv('~/scRNAseq-workshop2020/Mathys_supplement_5.csv')
 p4 <- synapser::synGet(entity='syn3191087') 
 metadata2 <- read.csv(p4$path)
 metadata2 <- plyr::match_df(metadata2, ids, on="projid")
@@ -180,12 +180,12 @@ dim(cds)
 Run this code chunk to save or retrieve saved components of the cds into your directory in order to easily recreate the monocle object if needed
 
 ```{r}
-saveRDS(counts, file="~/scAD_analysis/mathys_counts_matrix.rds")
-saveRDS(Labels, file="~/scAD_analysis/mathys_Labels.rds")
-saveRDS(gene_short_name, file="~/scAD_analysis/mathys_gene_short_name.rds")
-#counts <- readRDS(file="~/scAD_analysis/mathys_counts_matrix.rds")
-#Labels <- readRDS(file="~/scAD_analysis/mathys_Labels.rds")
-#gene_short_name <- readRDS(file="~/scAD_analysis/mathys_gene_short_name.rds")
+saveRDS(counts, file="~/scRNAseq-workshop2020/mathys_counts_matrix.rds")
+saveRDS(Labels, file="~/scRNAseq-workshop2020/mathys_Labels.rds")
+saveRDS(gene_short_name, file="~/scRNAseq-workshop2020/mathys_gene_short_name.rds")
+#counts <- readRDS(file="~/scRNAseq-workshop2020/mathys_counts_matrix.rds")
+#Labels <- readRDS(file="~/scRNAseq-workshop2020/mathys_Labels.rds")
+#gene_short_name <- readRDS(file="~/scRNAseq-workshop2020/mathys_gene_short_name.rds")
 ```
 
 Clean up some variables before processing and plotting:
@@ -286,7 +286,11 @@ plot_cells(cds_subset, color_cells_by="Diagnosis",cell_size=2,label_cell_groups=
 Call order_cells function to set a root node for the trajectory. This function will cause a shiny app to pop up on the screen. After first examining the previous plot you created which is color-coded by diagnosis, in the shiny pop-up choose a cell at the end of a branch that is surrounded primarily by control/early-path cells and click on that single cell so that it turns red, then click "Done" (this is highly subjective but will boost our signal for demonstration purposes). Be sure to only click one cell; you may need to zoom in on the pop-up graph to avoid accidentally clicking more than one cell. Then add pseudotime estimates to colData and plot pseudotime across the trajectory.
 
 ```{r}
-cds_subset<-order_cells(cds_subset)
+cds_subset<-monocle3::order_cells(cds_subset)
+```
+
+
+```{r}
 cds_subset$pseudotime = pseudotime(cds_subset)
 plot_cells(cds_subset, color_cells_by="pseudotime",cell_size=2)
 ```
