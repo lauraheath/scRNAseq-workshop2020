@@ -38,7 +38,7 @@ NOTE: Some code chunks will take longer to run than others. Please be patient an
 ```{r}
 synapser::synLogin()
 p <- synapser::synGet('syn18686381')
-counts <- readMM(p$path)
+counts <- Matrix::readMM(p$path)
 syn18642934 <- synapser::synGet(entity='syn18642934') 
 batches <- read.csv(syn18642934$path,stringsAsFactors = F)
 p2 <- synapser::synGet('syn18686372')
