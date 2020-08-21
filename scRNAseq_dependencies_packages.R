@@ -15,4 +15,6 @@ devtools::install_github('cole-trapnell-lab/monocle3', ref="develop")
 
 library(dplyr)
 library(ggplot2)
+library(grid)
+library(gridExtra)
 library(monocle3)

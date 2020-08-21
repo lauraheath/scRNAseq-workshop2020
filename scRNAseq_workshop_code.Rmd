@@ -203,20 +203,20 @@ cds$batch = as.factor(cds$batch)
 Preprocessing the data using PCA: we will compute 30 PCs and check to see if this is enough to capture most of the variation in gene expression across all cells in the data set with a visual plot. We will normalize by size factor to address sequencing depth differences.
 
 ```{r}
-cds = monocle3::preprocess_cds(cds, num_dim = 30,method="PCA",norm_method="size_only")
-monocle3::plot_pc_variance_explained(cds)
+cds = preprocess_cds(cds, num_dim = 30,method="PCA",norm_method="size_only")
+plot_pc_variance_explained(cds)
 ```
 
 Next, adjust for batch effects (factor variable) using mutual nearest neighbor (via the "align_cds -> alignment_group" fxn below), and adjust for years of education and pmi (continuous variables) using regression (via the "align_cds -> residual_model_formula_str" fxn). Then reduce dimensionality of the data using UMAP, cluster the cells, and plot by broad cell type (as defined in Mathys et al.)
 
 ```{r}
-cds <- monocle3::align_cds(cds, 
+cds <- align_cds(cds, 
                         preprocess_method="PCA",
                         alignment_group="batch",
                         residual_model_formula_str="~educ+pmi")
-cds = monocle3::reduce_dimension(cds)
-cds = monocle3::cluster_cells(cds, reduction_method="UMAP")
-monocle3::plot_cells(cds, color_cells_by="broad.cell.type",cell_size=.1,label_cell_groups=0,show_trajectory_graph=FALSE)+theme(
+cds = reduce_dimension(cds)
+cds = cluster_cells(cds, reduction_method="UMAP")
+plot_cells(cds, color_cells_by="broad.cell.type",cell_size=.1,label_cell_groups=0,show_trajectory_graph=FALSE)+theme(
   legend.title = element_text(size = 10),
   legend.text = element_text(size = 7),legend.key.size = unit(.5, "cm"),
   legend.key.width = unit(0.5,"cm"))
@@ -226,7 +226,7 @@ Find the top marker genes for each broad cell type:
 Note: this is an overly broad analysis for demonstration purposes. You may be more interested in Subclusters within each broad cell type compared to each other, as done in Mathys et al.
 
 ```{r}
-marker_test_res <- monocle3::top_markers(cds, group_cells_by="broad.cell.type", cores=8)
+marker_test_res <- top_markers(cds, group_cells_by="broad.cell.type", cores=8)
 head(marker_test_res)
 ```
 
@@ -238,7 +238,7 @@ top_markers <- marker_test_res %>%
                 group_by(cell_group) %>%
                 top_n(1, pseudo_R2)
 top_marker_ids <- unique(top_markers %>% pull(gene_id))
-monocle3::plot_genes_by_group(cds, top_marker_ids,
+plot_genes_by_group(cds, top_marker_ids,
                     group_cells_by="broad.cell.type",
                     ordering_type="maximal_on_diag",
                     max.size=8)
@@ -247,7 +247,7 @@ monocle3::plot_genes_by_group(cds, top_marker_ids,
 Now plot expression across all the cell types for each top marker gene:
 
 ```{r}
-monocle3::plot_cells(cds, genes=top_marker_ids)
+plot_cells(cds, genes=top_marker_ids)
 ```
 
 #################################### TRAJECTORIES ######################
@@ -283,14 +283,26 @@ plot_cells(cds_subset, color_cells_by="Diagnosis",cell_size=2,label_cell_groups=
   legend.key.width = unit(0.5,"cm"))
 ```
 
-Call order_cells function to set a root node for the trajectory. This function will cause a shiny app to pop up on the screen. After first examining the previous plot you created which is color-coded by diagnosis, in the shiny pop-up choose a cell at the end of a branch that is surrounded primarily by control/early-path cells and click on that single cell so that it turns red, then click "Done" (this is highly subjective but will boost our signal for demonstration purposes). Be sure to only click one cell; you may need to zoom in on the pop-up graph to avoid accidentally clicking more than one cell. Then add pseudotime estimates to colData and plot pseudotime across the trajectory.
+The function below will pick the root at the "beginning" of the trajectory by first grouping the cells according to which trajectory graph node they are nearest to. Then, it calcuates what fraction of the cells at each node come from Control samples. Then it picks the node that is most heavily occupied by Control cells and returns that as the root.
+
+Then call the order_cells function to calculate pseudotime based on order, and plot by pseudotime:
 
 ```{r}
-cds_subset<-monocle3::order_cells(cds_subset)
-```
 
-
-```{r}
+get_earliest_principal_node <- function(cds_subset, diagnosis="Control"){
+  cell_ids <- which(colData(cds_subset)[, "Diagnosis"]==diagnosis)
+  
+  closest_vertex <-
+  cds_subset@principal_graph_aux[["UMAP"]]$pr_graph_cell_proj_closest_vertex
+  closest_vertex <- as.matrix(closest_vertex[colnames(cds_subset), ])
+  root_pr_nodes <-
+  igraph::V(principal_graph(cds_subset)[["UMAP"]])$name[as.numeric(names
+  (which.max(table(closest_vertex[cell_ids,]))))]
+  
+  root_pr_nodes
+  
+}
+cds_subset <- order_cells(cds_subset, root_pr_nodes=get_earliest_principal_node(cds_subset))
 cds_subset$pseudotime = pseudotime(cds_subset)
 plot_cells(cds_subset, color_cells_by="pseudotime",cell_size=2)
 ```
@@ -314,10 +326,10 @@ Use limma to pull the pseudotime coefficient and p-value, and assemble two plots
 
 ```{r}
 dm <- model.matrix(~pseudotime+pmi+educ, data=pval_data)
-fit1 <- lmFit(pval_data$diagnosis2,dm)
-fit2 <- eBayes(fit1)
-pval=topTable(fit2,coef=2)$adj.P.Val   
-logfc = topTable(fit2,coef=2)$logFC
+fit1 <- limma::lmFit(pval_data$diagnosis2,dm)
+fit2 <- limma::eBayes(fit1)
+pval=limma::topTable(fit2,coef=2)$adj.P.Val   
+logfc = limma::topTable(fit2,coef=2)$logFC
 
 stars=''
 
