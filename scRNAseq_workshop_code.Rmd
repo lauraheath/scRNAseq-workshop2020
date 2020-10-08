@@ -27,7 +27,7 @@ BATCHES:
 Sample batch data
 
 LABELS: 
-Cell barcodes and celltype data (broad cell type and Subcluster) as determined by Mathys et al. 
+Cell barcodes and celltype data (broad cell type and Subcluster) as determined by Mathys et al.
 Note: the data has already been deconvoluted. This workshop does not cover this topic but it is important!
 
 GENE LIST:
@@ -52,7 +52,7 @@ METADATA: upload metadata files (two files, plus a key to match sample ids to ro
 IDS:
 Needed to map rosmap IDs to sample IDs 
 
-METADATA:  NEED TO UPLOAD INTO SYNAPSE
+METADATA (file in github repo)
 Neuropath data (this is a csv version of supplementary table 5 from Mathys et al.)
 
 METADATA2:
@@ -136,11 +136,11 @@ Labels$AOD=AOD
 Labels$Diagnosis[Labels$Diagnosis=='late-pathology'] <- "Late-path"
 Labels$Diagnosis[Labels$Diagnosis=='no-pathology'] <- 'Control'
 Labels$Diagnosis[Labels$Diagnosis=='early-pathology'] <- 'Early-path'
-Labels$simpleDiagnosis = Labels$Diagnosis
-Labels$simpleDiagnosis[Labels$simpleDiagnosis!='Control'] <- "AD"
 Labels$Diagnosis[Labels$Diagnosis==1]='Early-path'
 Labels$Diagnosis[Labels$Diagnosis==2]='Late-path'
 Labels$Diagnosis[Labels$Diagnosis==3]='Control'
+Labels$simpleDiagnosis = Labels$Diagnosis
+Labels$simpleDiagnosis[Labels$simpleDiagnosis!='Control'] <- "AD"
 head(Labels)
 ```
 
@@ -200,10 +200,10 @@ cds$APOE_genotype = cds$apoe_genotype
 cds$batch = as.factor(cds$batch)
 ```
 
-Preprocessing the data using PCA: we will compute 30 PCs and check to see if this is enough to capture most of the variation in gene expression across all cells in the data set with a visual plot. We will normalize by size factor to address sequencing depth differences.
+Preprocessing the data using PCA: we will compute 30 PCs and check to see if this is enough to capture most of the variation in gene expression across all cells in the data set with a visual plot. The norm_method="log" will log transform and normalize by size factor to address sequencing depth differences.
 
 ```{r}
-cds = preprocess_cds(cds, num_dim = 30,method="PCA",norm_method="size_only")
+cds = preprocess_cds(cds, num_dim = 30,method="PCA", norm_method="log")
 plot_pc_variance_explained(cds)
 ```
 
@@ -216,14 +216,14 @@ cds <- align_cds(cds,
                         residual_model_formula_str="~educ+pmi")
 cds = reduce_dimension(cds)
 cds = cluster_cells(cds)
-plot_cells(cds, color_cells_by="broad.cell.type",cell_size=.1,label_cell_groups=0,show_trajectory_graph=FALSE)+theme(
+plot_cells(cds, color_cells_by="Diagnosis",cell_size=.1,label_cell_groups=0,show_trajectory_graph=FALSE)+theme(
   legend.title = element_text(size = 10),
   legend.text = element_text(size = 7),legend.key.size = unit(.5, "cm"),
   legend.key.width = unit(0.5,"cm"))
 ```
 
 Find the top marker genes for each broad cell type:
-Note: this is an overly broad analysis for demonstration purposes. You may be more interested in Subclusters within each broad cell type compared to each other, as done in Mathys et al.
+Note: this is an overly broad analysis for demonstration purposes. You can also feed Monocle a list of known marker genes, examine expression patterns in each partition, and determine broad cell types yourself.
 
 ```{r}
 marker_test_res <- top_markers(cds, group_cells_by="broad.cell.type", cores=8)
@@ -252,10 +252,10 @@ plot_cells(cds, genes=top_marker_ids)
 
 #################################### TRAJECTORIES ######################
 
-Explore a specific cell subcluster: the Oli1 subcluster.
+Explore a specific cell subcluster: the Oli4 subcluster.
 Previous studies and preliminary analyses indicate important differences in gene expression in different cell types by sex. We will examine trajectories in female samples only.
 
-After subsetting the cds to include female mic1 cells only:
+After subsetting the cds to include female Oli4 cells only:
 1) repeat preprocess_cds to normalize by sequencing depth in the new smaller data set. 
 2) only keep genes non-zero in at least 20 cells
 3) change batch into a character and back to factor (to delete batch bins with 0 counts, it is a weird glitch)
@@ -264,10 +264,10 @@ After subsetting the cds to include female mic1 cells only:
 
 ```{r}
 cdsF <- cds[,cds$sex=='female']
-cds_subset <- cdsF[,cdsF$Subcluster=='Oli1'] 
+cds_subset <- cdsF[,cdsF$Subcluster=='Oli4'] 
 cds_subset <- clear_cds_slots(cds_subset)
-cds_subset = cds_subset[rowSums(exprs(cds_subset) != 0) >= 20,]
-cds_subset <- preprocess_cds(cds_subset, num_dim = 30, method = "PCA", norm_method="size_only")
+cds_subset = cds_subset[rowSums(exprs(cds_subset) != 0) >= 20,]# only keep genes non-zero in at least 20 cells
+cds_subset <- preprocess_cds(cds_subset, num_dim = 30, method = "PCA", norm_method="log")
 cds_subset$batch <- as.character(cds_subset$batch)
 cds_subset$batch <- as.factor(cds_subset$batch)
 cds_subset <- align_cds(cds_subset, 
@@ -277,7 +277,8 @@ cds_subset <- align_cds(cds_subset,
 cds_subset = reduce_dimension(cds_subset, reduction_method="UMAP")
 cds_subset = cluster_cells(cds_subset, cluster_method="louvain")
 cds_subset <- learn_graph(cds_subset)
-plot_cells(cds_subset, color_cells_by="Diagnosis",cell_size=2,label_cell_groups=0)+theme(
+dim(cds_subset)
+plot_cells(cds_subset, color_cells_by="Diagnosis",cell_size=1.5,label_cell_groups=0)+theme(
   legend.title = element_text(size = 10),
   legend.text = element_text(size = 7),legend.key.size = unit(.5, "cm"),
   legend.key.width = unit(0.5,"cm"))
@@ -286,16 +287,15 @@ plot_cells(cds_subset, color_cells_by="Diagnosis",cell_size=2,label_cell_groups=
 We can also look at the cluster color-coded by rosmap id
 
 ```{r}
-plot_cells(cds_subset, color_cells_by="ros_ids",cell_size=2,label_cell_groups=0)+theme(
+plot_cells(cds_subset, color_cells_by="ros_ids",cell_size=1.5,label_cell_groups=0)+theme(
   legend.title = element_text(size = 10),
   legend.text = element_text(size = 7),legend.key.size = unit(.5, "cm"),
   legend.key.width = unit(0.5,"cm"))
 ```
 
-The function below will pick the root at the "beginning" of the trajectory by first grouping the cells according to which trajectory graph node they are nearest to. It calcuates what fraction of the cells at each node come from Control samples. Then it picks the node that is most heavily occupied by Control cells and returns that as the root.
+The function below will pick the root at the "beginning" of the trajectory by first grouping the cells according to which trajectory graph node they are nearest to. It calcuates what fraction of the cells at each node come from the "earliest" samples. Then it picks the node that is most heavily occupied by Control cells and returns that as the root.
 
 After setting the root, call the order_cells function to calculate pseudotime based on order, and plot by pseudotime:
-
 ```{r}
 get_earliest_principal_node <- function(cds_subset, diagnosis="Control"){
   cell_ids <- which(colData(cds_subset)[, "Diagnosis"]==diagnosis)
@@ -312,7 +312,10 @@ get_earliest_principal_node <- function(cds_subset, diagnosis="Control"){
 }
 cds_subset <- order_cells(cds_subset, root_pr_nodes=get_earliest_principal_node(cds_subset))
 cds_subset$pseudotime = pseudotime(cds_subset)
-plot_cells(cds_subset, color_cells_by="pseudotime",cell_size=2)
+plot_cells(cds_subset, color_cells_by="pseudotime",cell_size=1.5,label_cell_groups=0)+theme(
+  legend.title = element_text(size = 10),
+  legend.text = element_text(size = 7),legend.key.size = unit(.5, "cm"),
+  legend.key.width = unit(0.5,"cm"))
 ```
 Create a dataframe that will contain variables necessary to regress: diagnosis ~ pseudotime + educ + pmi
 Note: we are not adjusting for batch because the align_cds function already effectively subtracted out batch effects and we do not want to overcorrect. the align_cds residual_model_formula_str function only miniimally affects the clustering of the cells, so these variables should be included.
@@ -353,9 +356,7 @@ p2<-plot_cells(cds_subset, color_cells_by="Diagnosis",cell_size=2,label_cell_gro
   theme(axis.title.x=element_blank(),axis.title.y=element_blank())+
   ggtitle(paste0('logFC=',formatC(logfc, format = "f", digits = 3),''))+
   theme(text = element_text(size = 15))
-#pdf(paste0("~/scAD_analysis/figures2/Oli1_F_dx_pseudotime.pdf"))
-p3<-grid.arrange(arrangeGrob(p1,p2,ncol=2,top = textGrob(paste0('Oli1 Female',stars),gp=gpar(fontsize=18,font=2))))
-#dev.off()
+p3<-grid.arrange(arrangeGrob(p1,p2,ncol=2,top = textGrob(paste0('Oli4 Female',stars),gp=gpar(fontsize=18,font=2))))
 ```
 
 Examine associations between pseudotime and neuropathology/APOE genotype. The following code will output a 4-paneled violin plot showing pseudotime in each category of Braak, CERAD, cognitive diagnosis category, and APOE genotype. P-values across the top are for the overall association between pseudotime and each outcome.
@@ -427,7 +428,7 @@ dp <- ggplot(pval_data, aes(x=APOE_genotype, y=pseudotime, fill=APOE_genotype)) 
 p4<-dp+theme(legend.position = "none")+theme(plot.margin = unit(c(0, 0, 0, 0), "cm"))+
     ggtitle(paste('p=',formatC(pval, format = "e", digits = 2),stars))+theme(axis.title=element_text(size=10))    
 
-grid.arrange(arrangeGrob(p1,p2,p3,p4,ncol=4,top = textGrob(paste0('Oli1 F',stars),gp=gpar(fontsize=15,font=2))))
+grid.arrange(arrangeGrob(p1,p2,p3,p4,ncol=4,top = textGrob(paste0('Oli4 F',stars),gp=gpar(fontsize=15,font=2))))
 
 
 ```
@@ -449,49 +450,49 @@ fit_coefs2 = fit_coefs2[keeps]
 head(fit_coefs2)
 ```
 
-Pull the top 6 most significant genes that are positively associated with pseudotime (i.e. increasing expression through pseudotime) 
+Pull the top (up to six) most significant genes that are positively associated with pseudotime (i.e. increasing expression through pseudotime) 
 
 ```{r}
-up_oli1 <- subset(fit_coefs2, fit_coefs2$test_val>0)
-top_up_oli1 <- up_oli1 %>%
+up_oli4 <- subset(fit_coefs2, fit_coefs2$test_val>0)
+top_up_oli4 <- up_oli1 %>%
                 top_n(-6, q_value)
-genelist_up_oli <- unique(top_up_oli1 %>% pull(gene_short_name))
-plot_cells(cds_subset, genes=genelist_up_oli,cell_size=1,label_cell_groups=0,show_trajectory_graph=FALSE)
+genelist_up_oli <- unique(top_up_oli4 %>% pull(gene_short_name))
+plot_cells(cds_subset, genes=genelist_up_oli,cell_size=2,label_cell_groups=0,show_trajectory_graph=FALSE)
 ```
 
-Repeat for the top six most significant genes that are negatively associated with pseudotime (i.e. decreasing expression through pseudotime)
+Repeat for the top (up to six) most significant genes that are negatively associated with pseudotime (i.e. decreasing expression through pseudotime)
 
 ```{r}
-down_oli1 <- subset(fit_coefs2, fit_coefs2$test_val<0)
-top_down_oli1 <- down_oli1 %>%
+down_oli4 <- subset(fit_coefs2, fit_coefs2$test_val<0)
+top_down_oli4 <- down_oli4 %>%
                 top_n(-6, q_value)
-genelist_down_oli <- unique(top_down_oli1 %>% pull(gene_short_name))
-plot_cells(cds_subset, genes=genelist_down_oli,cell_size=1,label_cell_groups=0,show_trajectory_graph=FALSE)
+genelist_down_oli <- unique(top_down_oli4 %>% pull(gene_short_name))
+plot_cells(cds_subset, genes=genelist_down_oli,cell_size=2,label_cell_groups=0,show_trajectory_graph=FALSE)
 ```
 
 Plot pseudotime across the x axis and expression on the y axis for each of the top 6 genes that are positively associated with pseudotime, using the Monocle3 function plot_genes_in_pseudotime
 
 ```{r}
-oli1_up_plotgenes <- cds_subset[rowData(cds_subset)$gene_short_name %in% genelist_up_oli,]
-plot_genes_in_pseudotime(oli1_up_plotgenes, color_cells_by="Diagnosis",min_expr=0.5)
+oli4_up_plotgenes <- cds_subset[rowData(cds_subset)$gene_short_name %in% genelist_up_oli,]
+plot_genes_in_pseudotime(oli4_up_plotgenes, color_cells_by="Diagnosis",min_expr=0.5)
 ```
 Plot pseudotime across the x axis and expression on the y axis for each of the top 6 genes that are negatively associated with pseudotime, using the Monocle3 function plot_genes_in_pseudotime 
 
 ```{r}
-oli1_down_plotgenes <- cds_subset[rowData(cds_subset)$gene_short_name %in% genelist_down_oli,]
-plot_genes_in_pseudotime(oli1_down_plotgenes, color_cells_by="Diagnosis",min_expr=0.5)
+oli4_down_plotgenes <- cds_subset[rowData(cds_subset)$gene_short_name %in% genelist_down_oli,]
+plot_genes_in_pseudotime(oli4_down_plotgenes, color_cells_by="Diagnosis",min_expr=0.5)
 
 ```
 
 
-Repeat with the Mic1 Subcluster
+Repeat with another Subcluster: Ex6
 
 ```{r}
 cdsF <- cds[,cds$sex=='female']
-cds_subset <- cdsF[,cdsF$Subcluster=='Mic1'] 
+cds_subset <- cdsF[,cdsF$Subcluster=='In7'] 
 cds_subset <- clear_cds_slots(cds_subset)
 cds_subset = cds_subset[rowSums(exprs(cds_subset) != 0) >= 20,]
-cds_subset <- preprocess_cds(cds_subset, num_dim = 30, method = "PCA", norm_method="size_only")
+cds_subset <- preprocess_cds(cds_subset, num_dim = 30, method = "PCA", norm_method="log")
 cds_subset$batch <- as.character(cds_subset$batch)
 cds_subset$batch <- as.factor(cds_subset$batch)
 cds_subset <- align_cds(cds_subset, 
@@ -579,9 +580,7 @@ p2<-plot_cells(cds_subset, color_cells_by="Diagnosis",cell_size=2,label_cell_gro
   theme(axis.title.x=element_blank(),axis.title.y=element_blank())+
   ggtitle(paste0('logFC=',formatC(logfc, format = "f", digits = 3),''))+
   theme(text = element_text(size = 15))
-#pdf(paste0("~/scAD_analysis/figures2/Mic1_F_dx_pseudotime.pdf"))
-p3<-grid.arrange(arrangeGrob(p1,p2,ncol=2,top = textGrob(paste0('Mic1 Female',stars),gp=gpar(fontsize=18,font=2))))
-#dev.off()
+p3<-grid.arrange(arrangeGrob(p1,p2,ncol=2,top = textGrob(paste0('In9 Female',stars),gp=gpar(fontsize=18,font=2))))
 ```
 
 We want to see which genes change expression across pseudotime by performing regression using the Monocle3 function fit_models, which fits the following regression for each gene: expr~pseudotime+pmi+educ
@@ -603,33 +602,34 @@ head(fit_coefs2)
 
 
 ```{r}
-up_mic1 <- subset(fit_coefs2, fit_coefs2$test_val>0)
-top_up_mic1 <- up_mic1 %>%
+up_In9 <- subset(fit_coefs2, fit_coefs2$test_val>0)
+top_up_In9 <- up_In9 %>%
                 top_n(-6, q_value)
-genelist_up_mic1 <- unique(top_up_mic1 %>% pull(gene_short_name))
-plot_cells(cds_subset, genes=genelist_up_mic1,cell_size=1,label_cell_groups=0,show_trajectory_graph=FALSE)
+genelist_up_In9 <- unique(top_up_In9 %>% pull(gene_short_name))
+plot_cells(cds_subset, genes=genelist_up_In9,cell_size=1,label_cell_groups=0,show_trajectory_graph=FALSE)
 ```
 
 Repeat for the top six most significant genes that are negatively associated with pseudotime (i.e. decreasing expression through pseudotime)
 
 ```{r}
-down_mic1 <- subset(fit_coefs2, fit_coefs2$test_val<0)
-top_down_mic1 <- down_mic1 %>%
+down_In9 <- subset(fit_coefs2, fit_coefs2$test_val<0)
+top_down_In9 <- down_In9 %>%
                 top_n(-6, q_value)
-genelist_down_mic1 <- unique(top_down_mic1 %>% pull(gene_short_name))
-plot_cells(cds_subset, genes=genelist_down_mic1,cell_size=1,label_cell_groups=0,show_trajectory_graph=FALSE)
+genelist_down_In9 <- unique(top_down_In9 %>% pull(gene_short_name))
+plot_cells(cds_subset, genes=genelist_down_In9,cell_size=1,label_cell_groups=0,show_trajectory_graph=FALSE)
 ```
 There were no statistically significant genes that were negatively associated with pseudotime in the Mic1 subcluster.
 
 Plot pseudotime across the x axis and expression on the y axis for each of the top 6 genes that are positively associated with pseudotime, using the Monocle3 function plot_genes_in_pseudotime
 
 ```{r}
-mic1_up_plotgenes <- cds_subset[rowData(cds_subset)$gene_short_name %in% genelist_up_mic1,]
-plot_genes_in_pseudotime(mic1_up_plotgenes, color_cells_by="Diagnosis",min_expr=0.5)
+In9_up_plotgenes <- cds_subset[rowData(cds_subset)$gene_short_name %in% genelist_up_In9,]
+plot_genes_in_pseudotime(In9_up_plotgenes, color_cells_by="Diagnosis",min_expr=0.5)
 ```
 
 
 ```{r}
-
+In9_down_plotgenes <- cds_subset[rowData(cds_subset)$gene_short_name %in% genelist_down_In9,]
+plot_genes_in_pseudotime(In9_down_plotgenes, color_cells_by="Diagnosis",min_expr=0.5)
 ```
 
