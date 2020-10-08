@@ -485,7 +485,7 @@ plot_genes_in_pseudotime(oli4_down_plotgenes, color_cells_by="Diagnosis",min_exp
 ```
 
 
-Repeat with another Subcluster: Ex6
+Repeat with another Subcluster: In7
 
 ```{r}
 cdsF <- cds[,cds$sex=='female']
@@ -602,34 +602,34 @@ head(fit_coefs2)
 
 
 ```{r}
-up_In9 <- subset(fit_coefs2, fit_coefs2$test_val>0)
-top_up_In9 <- up_In9 %>%
+up_In7 <- subset(fit_coefs2, fit_coefs2$test_val>0)
+top_up_In7 <- up_In7 %>%
                 top_n(-6, q_value)
-genelist_up_In9 <- unique(top_up_In9 %>% pull(gene_short_name))
-plot_cells(cds_subset, genes=genelist_up_In9,cell_size=1,label_cell_groups=0,show_trajectory_graph=FALSE)
+genelist_up_In7 <- unique(top_up_In7 %>% pull(gene_short_name))
+plot_cells(cds_subset, genes=genelist_up_In7,cell_size=1,label_cell_groups=0,show_trajectory_graph=FALSE)
 ```
 
 Repeat for the top six most significant genes that are negatively associated with pseudotime (i.e. decreasing expression through pseudotime)
 
 ```{r}
-down_In9 <- subset(fit_coefs2, fit_coefs2$test_val<0)
-top_down_In9 <- down_In9 %>%
+down_In7 <- subset(fit_coefs2, fit_coefs2$test_val<0)
+top_down_In7 <- down_In7 %>%
                 top_n(-6, q_value)
-genelist_down_In9 <- unique(top_down_In9 %>% pull(gene_short_name))
-plot_cells(cds_subset, genes=genelist_down_In9,cell_size=1,label_cell_groups=0,show_trajectory_graph=FALSE)
+genelist_down_In7 <- unique(top_down_In7 %>% pull(gene_short_name))
+plot_cells(cds_subset, genes=genelist_down_In7,cell_size=1,label_cell_groups=0,show_trajectory_graph=FALSE)
 ```
 There were no statistically significant genes that were negatively associated with pseudotime in the Mic1 subcluster.
 
 Plot pseudotime across the x axis and expression on the y axis for each of the top 6 genes that are positively associated with pseudotime, using the Monocle3 function plot_genes_in_pseudotime
 
 ```{r}
-In9_up_plotgenes <- cds_subset[rowData(cds_subset)$gene_short_name %in% genelist_up_In9,]
-plot_genes_in_pseudotime(In9_up_plotgenes, color_cells_by="Diagnosis",min_expr=0.5)
+In7_up_plotgenes <- cds_subset[rowData(cds_subset)$gene_short_name %in% genelist_up_In7,]
+plot_genes_in_pseudotime(In7_up_plotgenes, color_cells_by="Diagnosis",min_expr=0.5)
 ```
 
 
 ```{r}
-In9_down_plotgenes <- cds_subset[rowData(cds_subset)$gene_short_name %in% genelist_down_In9,]
-plot_genes_in_pseudotime(In9_down_plotgenes, color_cells_by="Diagnosis",min_expr=0.5)
+In7_down_plotgenes <- cds_subset[rowData(cds_subset)$gene_short_name %in% genelist_down_In7,]
+plot_genes_in_pseudotime(In7_down_plotgenes, color_cells_by="Diagnosis",min_expr=0.5)
 ```
 
